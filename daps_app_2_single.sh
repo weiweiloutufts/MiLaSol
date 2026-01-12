@@ -31,7 +31,7 @@ $PY -c "import esm; from raygun.pretrained import raygun_4_4mil_800M; print('dep
 
 
 
-DATA_FILE="/cluster/home/wlou01/prot-solubility/data/sample_32.txt"
+DATA_FILE="/cluster/home/wlou01/milasol/data/sample_32.txt"
 
 export PYTHONPATH=$(pwd)/src
 $PY -u src/milasol/app/app2.py \

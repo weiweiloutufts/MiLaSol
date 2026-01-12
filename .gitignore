@@ -9,7 +9,6 @@ __pycache__/
 .env.*
 logs/
 outputs/
-checkpoints/
 build/
 dist/
 *.egg-info/

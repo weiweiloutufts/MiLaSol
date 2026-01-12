@@ -1,0 +1,10 @@
+biopython>=1.84
+fair-esm>=2.0.0
+numpy>=1.21.2
+pandas>=1.4.1
+raygun>=0.2.3
+scikit-learn>=1.0.2
+torch>=2.5.1
+torch-optimizer>=0.3.1a0
+tqdm>=4.63.0
+transformers>=4.57.3
