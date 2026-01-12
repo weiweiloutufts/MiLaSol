@@ -1,0 +1,17 @@
+cat << 'EOF' > .gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pt
+*.ckpt
+*.pkl
+.env
+.env.*
+logs/
+outputs/
+checkpoints/
+build/
+dist/
+*.egg-info/
+.ipynb_checkpoints/
+EOF
