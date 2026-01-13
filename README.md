@@ -73,5 +73,5 @@ python -m milasol.models.train \
 --proto_weight $proto_weight \
 --pos_rate $pos_rate \
 ```
-Acknowledgements
-This work was developed within the Cowen Lab at Tufts University.
+## Acknowledgements
+This project was developed in the Cowen Lab at Tufts University by Mert Erden, Weiwei Lou, and Prof. Lenore Cowen.
