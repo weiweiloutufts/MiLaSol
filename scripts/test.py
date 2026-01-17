@@ -1,4 +1,3 @@
-# test_prediction_consistency.py
 import os
 import random
 import numpy as np
@@ -90,7 +89,7 @@ def print_metrics(all_probs,all_preds,all_labels):
 
 # Load model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model_path = "/cluster/tufts/cowenlab/wlou01/model/daps_train0.3_0.1_0.1_0.0_64_2.5_1.0.pth"
+model_path = "../checkpoints/daps_train0.3_0.1_0.1_0.0_64_2.5_1.0.pth"
 fit_model = init_model(modelname=model_path, device=device)
 fit_model.eval()
 
@@ -104,37 +103,13 @@ tgt_file = "test_tgt.txt"
 tgt_data = pd.read_csv(tgt_file, header=None, names=["labels"], dtype=str, keep_default_na=False)
 labels= tgt_data["labels"].astype(int).tolist()
 
-# =======================
-# Method 1: all at once
-# =======================
-print("=" * 50)
-print("Method 1: All sequences at once")
-print("=" * 50)
-set_all_seeds(42)  # Reset seed before each method
 
-probs1, preds1, _= prediction(
-    fit_model,
-    seqs,
-    device=device,
-    out_dir="test_outputs",
-    cache_dir=cache_dir,
-    write_to_disk=False,
-
-)
-
-print("\nMetrics for Method 1:")
-print_metrics(probs1, preds1, labels)
-
-# =======================
-# Method 2: in chunks
-# =======================
 print("\n" + "=" * 50)
-print("Method 2: In chunks of 32 (like run_batch)")
+print("In chunks of 32")
 print("=" * 50)
-set_all_seeds(42)  # Reset seed to SAME value
 
 chunk_size = 32
-all_probs2, all_preds2 = [], []
+all_probs, all_preds = [], []
 
 for i in range(0, len(seqs), chunk_size):
     chunk = seqs[i:i + chunk_size]
@@ -146,10 +121,10 @@ for i in range(0, len(seqs), chunk_size):
         cache_dir=cache_dir,
         write_to_disk=False,
     )
-    all_probs2.extend(to_np(probs_chunk))
-    all_preds2.extend(to_np(preds_chunk))
+    all_probs.extend(to_np(probs_chunk))
+    all_preds.extend(to_np(preds_chunk))
  
-print("\nMetrics for Method 2:")
-print_metrics(all_probs2, all_preds2, labels)
+print("\nMetrics:")
+print_metrics(all_probs, all_preds, labels)
 
 

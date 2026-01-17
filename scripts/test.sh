@@ -31,10 +31,8 @@
 
 
 
+export PYTHONPATH=$(pwd)/src
+$PY -u test.py 
 
-# export PYTHONPATH=$(pwd)/src
-# $PY -u test.py 
 
 
-module load anaconda/2021.11
-python fake_emb.py
