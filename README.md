@@ -9,27 +9,9 @@ MiLaSol is a deep learning framework for protein solubility prediction that inte
 
 - **Multi-PLM integration**: Combines representations from ESM, ProtT5, and RayGun  
 - **End-to-end learning**: No handcrafted biophysical features required  
-- **Advanced supervision**:
-  - Binary classification loss  
-  - Contrastive learning  
-  - Reconstruction and regularization losses (entropy, prototype, center loss)  
 - **Robust performance**: High accuracy and MCC with balanced sensitivity  
-- **Extensible design**: Easy to plug in new embeddings or loss components  
 
 ---
-
-## 🧠 Model Overview
-
-MiLaSol learns protein representations by fusing multiple PLM embeddings and optimizing a composite objective that balances classification accuracy with representation structure.
-
-The training objective integrates:
-- Supervised classification loss  
-- Contrastive loss for feature discrimination  
-- Reconstruction loss for representation preservation  
-- Regularization via entropy, prototype, and center losses  
-
-Learnable weights dynamically balance each component during training.
-
 
 ## ⚙️ Installation
 
