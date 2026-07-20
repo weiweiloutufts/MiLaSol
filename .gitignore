@@ -15,3 +15,16 @@ dist/
 .ipynb_checkpoints/
 EOF
 test.sh
+notebook
+checkpoints_noregu
+checkpoints/linear_probe_solubility.pth
+design/
+embscom.sh
+embsplit_prepare.sh
+embssplit.sh
+params35.txt
+params36.txt
+params37.txt
+result/
+scripts/
+tempdata/

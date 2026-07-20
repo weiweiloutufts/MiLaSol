@@ -137,6 +137,7 @@ class ProteinClassifier(nn.Module):
         self.bn_prot = nn.LayerNorm(1280)
 
         total_dim = 7 * 1280 + lstm_hidden_dim * 2
+        #total_dim = 6 * 1280 
 
         self.dae = DenoisingAutoencoder(input_dim=total_dim, hidden_dim=latent_dim)
 
@@ -213,6 +214,6 @@ class ProteinClassifier(nn.Module):
 
         # Create augmented embedding via interpolation (safe)
         aug_z = lam * z + (1 - lam) * z[index]
-
+        #aug_z = z
         output = self.fc(aug_z)
         return output, z, aug_z, reconstruction_loss

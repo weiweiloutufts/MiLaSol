@@ -1,5 +1,6 @@
 import os
 import random
+import time
 import numpy as np
 import torch
 import pandas as pd
@@ -99,14 +100,14 @@ fit_model = init_model(modelname=model_path, device=device)
 fit_model.eval()
 
 # Load data
-data_path = "test_src.txt"
+data_path = "/cluster/home/wlou01/milasol/data/test_src.txt"
 scr_data = pd.read_csv(
     data_path, header=None, names=["sequence"], dtype=str, keep_default_na=False
 )
 seqs = scr_data["sequence"].astype(str).str.strip()
 seqs = seqs[seqs.str.len() > 0].tolist()
 print(f"Total sequences: {len(seqs)}\n")
-tgt_file = "test_tgt.txt"
+tgt_file = "/cluster/home/wlou01/milasol/data/test_tgt.txt"
 tgt_data = pd.read_csv(
     tgt_file, header=None, names=["labels"], dtype=str, keep_default_na=False
 )
@@ -119,9 +120,11 @@ print("=" * 50)
 
 chunk_size = 32
 all_probs, all_preds = [], []
+total_pred_time = 0.0
 
 for i in range(0, len(seqs), chunk_size):
     chunk = seqs[i : i + chunk_size]
+    t0 = time.perf_counter()
     probs_chunk, preds_chunk, _ = prediction(
         fit_model,
         chunk,
@@ -130,8 +133,17 @@ for i in range(0, len(seqs), chunk_size):
         cache_dir=cache_dir,
         write_to_disk=False,
     )
+    elapsed = time.perf_counter() - t0
+    total_pred_time += elapsed
+    per_sample_ms = elapsed / len(chunk) * 1000
+    print(
+        f"Samples {i+1}-{i+len(chunk)}: {elapsed*1000:.1f} ms total, "
+        f"{per_sample_ms:.2f} ms/sample"
+    )
     all_probs.extend(to_np(probs_chunk))
     all_preds.extend(to_np(preds_chunk))
 
+avg_ms = total_pred_time / len(seqs) * 1000
+print(f"\nTotal prediction time: {total_pred_time*1000:.1f} ms | Avg: {avg_ms:.2f} ms/sample")
 print("\nMetrics:")
 print_metrics(all_probs, all_preds, labels)

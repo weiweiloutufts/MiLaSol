@@ -18,14 +18,20 @@ from sklearn.metrics import (
 
 
 import argparse
-
+from pathlib import Path
 
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import torch_optimizer as optim
 
-from milasol.data.datasets import ProteinDataset, collate_fn
+from milasol.data.datasets_new import ProteinDataset, collate_fn
 
 from milasol.models.base import ProteinClassifier
+
+
+def _require_input_file(path_value, arg_name):
+    if not path_value:
+        raise ValueError(f"Missing required input argument: --{arg_name}")
+    return str(path_value)
 
 
 def weighted_supervised_contrastive_loss(
@@ -514,6 +520,22 @@ def train(
     triplet_weight,
     proto_weight,
     pos_rate=2.0,
+    model_dir=None,
+    train_sequence_file=None,
+    train_esm_file=None,
+    train_prot_file=None,
+    train_raygun_file=None,
+    train_label_file=None,
+    val_sequence_file=None,
+    val_esm_file=None,
+    val_prot_file=None,
+    val_raygun_file=None,
+    val_label_file=None,
+    test_sequence_file=None,
+    test_esm_file=None,
+    test_prot_file=None,
+    test_raygun_file=None,
+    test_label_file=None,
 ):
 
     # ----- Model/data hyperparams -----
@@ -544,55 +566,56 @@ def train(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
 
+    model_dir = Path(model_dir or ".")
+    model_dir.mkdir(parents=True, exist_ok=True)
+
     # Load dataset
-    # train data
-    input_dir = "/cluster/tufts/cowenlab/wlou01/datasets/deepsol_data/"
-    train_srcfile = input_dir + "train_src.txt"
-    train_esmfile = input_dir + "train_src_esm_embeddings.csv"
-    train_raygunfile = input_dir + "train_src_raygun_embeddings_v2.csv"
-    train_protfile = input_dir + "train_src_prot_embeddings.csv"
-    train_tgtfile = input_dir + "train_tgt.txt"
+    train_sequence_file = _require_input_file(train_sequence_file, "train_sequence_file")
+    train_esm_file = _require_input_file(train_esm_file, "train_esm_file")
+    train_raygun_file = _require_input_file(train_raygun_file, "train_raygun_file")
+    train_prot_file = _require_input_file(train_prot_file, "train_prot_file")
+    train_label_file = _require_input_file(train_label_file, "train_label_file")
 
-    # valid data
-    valid_srcfile = input_dir + "val_src.txt"
-    valid_esmfile = input_dir + "val_src_esm_embeddings.csv"
-    valid_raygunfile = input_dir + "val_src_raygun_embeddings_v2.csv"
-    valid_protfile = input_dir + "val_src_prot_embeddings.csv"
-    valid_tgtfile = input_dir + "val_tgt.txt"
+    val_sequence_file = _require_input_file(val_sequence_file, "val_sequence_file")
+    val_esm_file = _require_input_file(val_esm_file, "val_esm_file")
+    val_raygun_file = _require_input_file(val_raygun_file, "val_raygun_file")
+    val_prot_file = _require_input_file(val_prot_file, "val_prot_file")
+    val_label_file = _require_input_file(val_label_file, "val_label_file")
 
-    # test data
-    test_srcfile = input_dir + "test_src.txt"
-    test_esmfile = input_dir + "test_src_esm_embeddings.csv"
-    test_raygunfile = input_dir + "test_src_raygun_embeddings_v2.csv"
-    test_protfile = input_dir + "test_src_prot_embeddings.csv"
-    test_tgtfile = input_dir + "test_tgt.txt"
+    test_sequence_file = _require_input_file(test_sequence_file, "test_sequence_file")
+    test_esm_file = _require_input_file(test_esm_file, "test_esm_file")
+    test_raygun_file = _require_input_file(test_raygun_file, "test_raygun_file")
+    test_prot_file = _require_input_file(test_prot_file, "test_prot_file")
+    test_label_file = _require_input_file(test_label_file, "test_label_file")
 
     train_data = ProteinDataset(
-        train_srcfile,
-        train_esmfile,
-        train_protfile,
-        train_raygunfile,
+        train_sequence_file,
+        train_esm_file,
+        train_prot_file,
+        train_raygun_file,
         feats_file=None,
-        label_file=train_tgtfile,
+        label_file=train_label_file,
     )
     val_data = ProteinDataset(
-        valid_srcfile,
-        valid_esmfile,
-        valid_protfile,
-        valid_raygunfile,
+        val_sequence_file,
+        val_esm_file,
+        val_prot_file,
+        val_raygun_file,
         feats_file=None,
-        label_file=valid_tgtfile,
+        label_file=val_label_file,
     )
     test_data = ProteinDataset(
-        test_srcfile,
-        test_esmfile,
-        test_protfile,
-        test_raygunfile,
+        test_sequence_file,
+        test_esm_file,
+        test_prot_file,
+        test_raygun_file,
         feats_file=None,
-        label_file=test_tgtfile,
+        label_file=test_label_file,
     )
 
-    print("Datasets scource is ." + input_dir)
+    print("Train sequence file:", train_sequence_file)
+    print("Validation sequence file:", val_sequence_file)
+    print("Test sequence file:", test_sequence_file)
 
     # Create DataLoader
 
@@ -679,7 +702,7 @@ def train(
 
         # ---- Save & Early stopping ----
         current_epoch = epoch + 1
-        modelname = f"/cluster/tufts/cowenlab/wlou01/model/daps_train{contrastive_weight}_{entropy_weight}_{rec_loss_weight}_{triplet_weight}_{latent_dim}_{pos_rate}_{proto_weight}.pth"
+        modelname = str(model_dir / f"train{contrastive_weight}_{entropy_weight}_{rec_loss_weight}_{triplet_weight}_{latent_dim}_{pos_rate}_{proto_weight}.pth")
 
         early_stopper.step(
             val_mcc, model, modelname, current_epoch, logs["acc"], val_acc
@@ -717,6 +740,22 @@ def main():
     parser.add_argument(
         "--pos_rate", type=float, default=2.0, help="Positive weight for BCE loss"
     )
+    parser.add_argument("--model_dir", type=str, default=".")
+    parser.add_argument("--train_sequence_file", type=str, default=None)
+    parser.add_argument("--train_esm_file", type=str, default=None)
+    parser.add_argument("--train_prot_file", type=str, default=None)
+    parser.add_argument("--train_raygun_file", type=str, default=None)
+    parser.add_argument("--train_label_file", type=str, default=None)
+    parser.add_argument("--val_sequence_file", type=str, default=None)
+    parser.add_argument("--val_esm_file", type=str, default=None)
+    parser.add_argument("--val_prot_file", type=str, default=None)
+    parser.add_argument("--val_raygun_file", type=str, default=None)
+    parser.add_argument("--val_label_file", type=str, default=None)
+    parser.add_argument("--test_sequence_file", type=str, default=None)
+    parser.add_argument("--test_esm_file", type=str, default=None)
+    parser.add_argument("--test_prot_file", type=str, default=None)
+    parser.add_argument("--test_raygun_file", type=str, default=None)
+    parser.add_argument("--test_label_file", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -734,6 +773,22 @@ def main():
         args.triplet_weight,
         args.proto_weight,
         args.pos_rate,
+        args.model_dir,
+        args.train_sequence_file,
+        args.train_esm_file,
+        args.train_prot_file,
+        args.train_raygun_file,
+        args.train_label_file,
+        args.val_sequence_file,
+        args.val_esm_file,
+        args.val_prot_file,
+        args.val_raygun_file,
+        args.val_label_file,
+        args.test_sequence_file,
+        args.test_esm_file,
+        args.test_prot_file,
+        args.test_raygun_file,
+        args.test_label_file,
     )
 
 

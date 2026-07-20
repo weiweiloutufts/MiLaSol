@@ -14,16 +14,18 @@
 
 
 # Load required modules
+set -euo pipefail
 
-
+# Load required modules
 module purge
-module load ngc/1.0
-module load pytorch/2.5.1-cuda12.1-cudnn9
+module load modtree/deprecated
+module load anaconda/2024.10
+conda activate biosolu
 
-
-
-PY=/cluster/tufts/ngc/tools/pytorch/2.5.1-cuda12.1-cudnn9/bin/python
 export PYTHONUNBUFFERED=1
+
+GPU_WAIT_SECONDS=30
+py=/cluster/tufts/cowenlab/wlou01/condaenv/biosolu/bin/python
 
 echo "CVD=${CUDA_VISIBLE_DEVICES:-<empty>}"; nvidia-smi | head -n 3
 $PY -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"

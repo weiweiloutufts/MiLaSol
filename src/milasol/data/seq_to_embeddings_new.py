@@ -8,6 +8,7 @@ from typing import Iterable, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn.functional as F
 
 import esm
 from transformers import T5EncoderModel, T5Tokenizer
@@ -49,17 +50,15 @@ def _load_sequences(
         s = source.strip()
         p = Path(s)
 
-        # Safely decide if it's a path
+        # Treat recognized file extensions as paths without pre-checking filesystem visibility.
         try:
             looks_like_path = len(s) < 240 and (
-                p.suffix.lower()
-                in {".csv", ".tsv", ".txt", ".fa", ".fasta", ".faa", ".fas"}
-                or p.exists()
+                p.suffix.lower() in {".csv", ".tsv", ".txt", ".fa", ".fasta", ".faa", ".fas"}
             )
         except OSError:
             looks_like_path = False
 
-        if looks_like_path and p.exists():
+        if looks_like_path:
             ext = p.suffix.lower()
             if ext == ".csv":
                 df = pd.read_csv(p)
@@ -149,24 +148,40 @@ def _esm_perres_and_pooled(
     per_res_list: List[torch.Tensor] = []
     pooled_chunks: List[np.ndarray] = []
 
+    allowed_residues = {tok for tok in alphabet.tok_to_idx if len(tok) == 1}
     data = [(f"seq_{i}", s) for i, s in enumerate(seqs)]
+    invalid_examples = []
+    sanitized_data = []
+    invalid_count = 0
+    for name, seq in data:
+        invalid_chars = sorted({ch for ch in seq if ch not in allowed_residues})
+        if invalid_chars:
+            invalid_count += 1
+            if len(invalid_examples) < 10:
+                invalid_examples.append(f"{name}={''.join(invalid_chars)}")
+            seq = ''.join(ch if ch in allowed_residues else 'X' for ch in seq)
+        sanitized_data.append((name, seq))
+    data = sanitized_data
+    if invalid_count:
+        preview = ", ".join(invalid_examples)
+        print(
+            f"[ESM] WARNING: replaced invalid residues with X in {invalid_count} sequences. "
+            f"Examples: {preview}"
+        )
 
     # ---- length guard (ESM2 limit) ----
     MAX_LEN = 2000
     too_long = [(name, len(seq)) for name, seq in data if len(seq) > MAX_LEN]
     if too_long:
-        # log a few examples
         preview = ", ".join([f"{n}={L}" for n, L in too_long[:10]])
         print(
-            f"[ESM] ERROR: {len(too_long)} sequences exceed max length {MAX_LEN}. "
+            f"[ESM] WARNING: truncating {len(too_long)} sequences to max length {MAX_LEN}. "
             f"Examples: {preview}"
         )
-        # raise with concrete info
-        raise ValueError(
-            f"ESM2 input sequence length > {MAX_LEN}. "
-            f"Longest={max(L for _, L in too_long)}. "
-            f"First few: {preview}"
-        )
+        data = [
+            (name, seq[:MAX_LEN] if len(seq) > MAX_LEN else seq)
+            for name, seq in data
+        ]
     # -------------------------------
 
     for i in range(0, len(data), batch_size):
@@ -231,22 +246,45 @@ def _prott5_pooled(
 
 
 @torch.no_grad()
-def _raygun_from_esm(per_res_list: List[torch.Tensor], device: str) -> np.ndarray:
-    localurl = "/cluster/tufts/cowenlab/wlou01/modelcache/rohitsinghlab_raygun_main"
+def _raygun_from_esm(
+    per_res_list: List[torch.Tensor], device: str, cache_dir: str
+) -> np.ndarray:
+    localurl = str(Path(cache_dir) / "rohitsinghlab_raygun_main")
     raymodel, esmdecoder, _ = torch.hub.load(
         localurl, "pretrained_uniref50_4_4mil_800M", source="local"
     )
     raymodel = raymodel.model.to(device).eval()
 
     outs = []
-    for per_tok in per_res_list:
+    min_residues = 50
+    short_examples = []
+    short_count = 0
+    for idx, per_tok in enumerate(per_res_list):
         x = per_tok.to(device)
         if x.ndim == 2:
-            x = x.unsqueeze(0)
+            if x.size(0) < min_residues:
+                short_count += 1
+                if len(short_examples) < 10:
+                    short_examples.append(f"seq_{idx}={x.size(0)}")
+                # RayGun's reduction layer divides by zero when seq_len < 50.
+                x = x.transpose(0, 1).unsqueeze(0)
+                x = F.interpolate(
+                    x, size=min_residues, mode="linear", align_corners=False
+                )
+                x = x.transpose(1, 2).contiguous()
+            else:
+                x = x.unsqueeze(0)
 
         out = raymodel(x, return_logits_and_seqs=False)
         z = out["fixed_length_embedding"].mean(dim=1)
         outs.append(z.squeeze(0).detach().cpu().numpy())
+
+    if short_count:
+        preview = ", ".join(short_examples)
+        print(
+            f"[RayGun] WARNING: upsampled {short_count} sequences shorter than "
+            f"{min_residues} residues before RayGun encoding. Examples: {preview}"
+        )
 
     return np.stack(outs, axis=0)
 
@@ -255,33 +293,35 @@ def _raygun_from_esm(per_res_list: List[torch.Tensor], device: str) -> np.ndarra
 
 
 def _resolve_cache_dir(cache_dir: Optional[str]) -> str:
-    # 1) explicit argument wins
+    """
+    Priority:
+      1) explicit cache_dir arg
+      2) $HF_HOME (or $TRANSFORMERS_CACHE if HF_HOME unset)
+      3) ~/.cache/protein_models
+    Also sets env vars so esm/transformers/torch.hub all use it.
+    """
     if cache_dir:
-        p = Path(cache_dir)
-        p.mkdir(parents=True, exist_ok=True)
-        torch.hub.set_dir(str(p))
-        return str(p)
+        cd = Path(cache_dir).expanduser()
+    else:
+        cd = Path(
+            os.getenv("HF_HOME")
+            or os.getenv("TRANSFORMERS_CACHE")
+            or "~/.cache/protein_models"
+        ).expanduser()
 
-    # 2) environment variables
-    for env_var in ("DAPROTSOLU_CACHE", "TORCH_HOME", "HF_HOME", "TRANSFORMERS_CACHE"):
-        candidate = os.environ.get(env_var)
-        if candidate:
-            p = Path(candidate)
-            p.mkdir(parents=True, exist_ok=True)
+    cd.mkdir(parents=True, exist_ok=True)
 
-            # If using TORCH_HOME, torch expects weights under TORCH_HOME/hub/checkpoints
-            if env_var == "TORCH_HOME":
-                torch.hub.set_dir(str(p))
-                return str(p)
+    # Make sure all libraries respect it
+    os.environ.setdefault("HF_HOME", str(cd))
+    os.environ.setdefault("TRANSFORMERS_CACHE", str(cd))
 
-            torch.hub.set_dir(str(p / "torch"))
-            return str(p)
-
-    # 3) fallback
-    default_cache = Path.home() / ".cache" / "protein_models"
-    default_cache.mkdir(parents=True, exist_ok=True)
-    torch.hub.set_dir(str(default_cache))  # <-- set to default_cache, not None
-    return str(default_cache)
+    
+    
+    try:
+        torch.hub.set_dir(cd)
+    except Exception:
+        pass
+    return str(cd)
 
 
 def transfer_to_three_embedding_csvs(
@@ -321,7 +361,7 @@ def transfer_to_three_embedding_csvs(
     out_path = Path(out_dir) if write_to_disk else None
     if out_path is not None:
         out_path.mkdir(parents=True, exist_ok=True)
-
+    
     sequence_path = str(out_path / "seqs.txt") if out_path else None
     esm_path = str(out_path / "esm2.csv") if out_path else None
     ray_path = str(out_path / "raygun.csv") if out_path else None
@@ -331,6 +371,7 @@ def transfer_to_three_embedding_csvs(
     seqs = [("".join(s) if isinstance(s, (list, tuple)) else str(s)) for s in seqs]
 
     if sequence_path:
+        print(f"[Info] Writing {len(seqs)} sequences to {sequence_path}")
         with open(sequence_path, "w") as f:
             for s in seqs:
                 f.write(s + "\n")
@@ -342,14 +383,18 @@ def transfer_to_three_embedding_csvs(
         esm_pooled, columns=[f"e{i}" for i in range(esm_pooled.shape[1])]
     )
     if esm_path:
+        print(f"[Info] Writing ESM embeddings with shape {df_esm.shape} to {esm_path}")
         df_esm.to_csv(esm_path, index=False, header=True)
     esm_emb = torch.tensor(df_esm.to_numpy(), dtype=torch.float32)
 
-    ray_mat = _raygun_from_esm(per_res_list, device=device)
+    ray_mat = _raygun_from_esm(per_res_list, device=device, cache_dir=cache_dir)
     df_raygun = pd.DataFrame(
         ray_mat, columns=[f"e{i}" for i in range(ray_mat.shape[1])]
     )
     if ray_path:
+        print(
+            f"[Info] Writing RayGun embeddings with shape {df_raygun.shape} to {ray_path}"
+        )
         df_raygun.to_csv(ray_path, index=False, header=True)
     raygun_emb = torch.tensor(df_raygun.to_numpy(), dtype=torch.float32)
 
@@ -360,6 +405,9 @@ def transfer_to_three_embedding_csvs(
         prot_mat, columns=[f"e{i}" for i in range(prot_mat.shape[1])]
     )
     if prot_path:
+        print(
+            f"[Info] Writing ProtT5 embeddings with shape {df_prott5.shape} to {prot_path}"
+        )
         df_prott5.to_csv(prot_path, index=False, header=True)
     prott5_emb = torch.tensor(df_prott5.to_numpy(), dtype=torch.float32)
 
