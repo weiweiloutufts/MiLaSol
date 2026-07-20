@@ -28,3 +28,5 @@ params37.txt
 result/
 scripts/
 tempdata/
+data/test_src.fasta
+data/CamSol.txt
