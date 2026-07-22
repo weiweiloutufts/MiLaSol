@@ -1,5 +1,6 @@
 # MiLaSol  
 **Modeling Protein Solubility by Mixing Up Multiple Protein Language Models**
+https://doi.org/10.5281/zenodo.21495202
 
 MiLaSol is a deep learning framework for protein solubility prediction that integrates multiple protein language models (PLMs) to learn complementary sequence representations. The model eliminates reliance on handcrafted protein engineering features and achieves strong, balanced performance on both soluble and insoluble proteins.
 
