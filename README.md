@@ -67,3 +67,6 @@ python -m milasol.models.train \
 ```
 ## Acknowledgements
 This project was developed in the Cowen Lab at Tufts University by Mert Erden, Weiwei Lou, and Prof. Lenore Cowen.
+
+## Published Paper
+https://academic.oup.com/bioinformaticsadvances/article/6/1/vbag233/8761374
